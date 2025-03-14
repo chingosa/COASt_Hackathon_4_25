@@ -11,7 +11,8 @@ from scipy import stats
 import os
 import cftime
 from concurrent.futures import ThreadPoolExecutor
-
+from IPython.display import Markdown
+import inspect
 ###################################################################################################################################
 ##                                           Meta Data Helper Functions
 ###################################################################################################################################
@@ -271,11 +272,11 @@ def download_and_check(url, temp_filename, final_filename, stop_event):
     except Exception as e:
         return False, None
         
-def preprocess_and_download(models, df, maxWorkers=2):
+def preprocess_and_download(models, df, preprocessFunc, maxWorkers=2):
     ''' This is where we get a little more theoretical - Lets assume that we want to download the raw data for each of given variables and periods
     periods - more of a relic of my own work but could be like historical or pmip'''
     tasks = [
-        (period, Var, df, model)
+        (period, Var, df, model, preprocessFunc)
         for period in df.period.unique()
         for Var in df.Var.unique()
         for model in models   
@@ -286,7 +287,7 @@ def preprocess_and_download(models, df, maxWorkers=2):
     
 
 
-def process_period_var(period, Var, df, model):
+def process_period_var(period, Var, df, model, preprocessFunc):
     """Handles downloading data for a single (period, variable) combination using download concurrently - inputs are split up by file path unique
     """
     paths = df[((df.model == model) & (df.period == period))&(df.Var == Var)].reset_index(drop=True)
@@ -304,7 +305,7 @@ def process_period_var(period, Var, df, model):
             ds = ds[Var]
             # Preprocess Here: vvv
             ds = ds.chunk({'time':-1, 'lat':20})
-
+            ds = preprocessFunc(ds, period, Var, df, model)
             # Save Preprossed Data
             write_job = ds.to_netcdf(saveName, compute=False)
             
@@ -321,3 +322,19 @@ def process_period_var(period, Var, df, model):
         
         except Exception as e:
             print(e)
+
+
+###################################################################################################################################
+##                                           Other Stuff
+###################################################################################################################################
+def show_function_markdown(func_name):
+    code = inspect.getsource(func_name)
+    return Markdown(f"```python\n{code}\n```")
+
+def sizeof_fmt(num, suffix="B"):
+    for unit in ("", "Ki", "Mi", "Gi", "Ti", "Pi", "Ei", "Zi"):
+        if abs(num) < 1024.0:
+            return f"{num:3.1f}{unit}{suffix}"
+        num /= 1024.0
+    return f"{num:.1f}Yi{suffix}"
+# size = sizeof_fmt(os.path.getsize(f'TempData/{model}_historical_tas_processed.nc'))
